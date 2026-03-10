@@ -1,6 +1,8 @@
 # =================================
 # Danush Shekar (UIC), 9Dec25
 # =================================
+import json
+import os
 import ROOT
 import mplhep as hep
 import matplotlib.pyplot as plt
@@ -22,21 +24,21 @@ parser.add_argument(
     help='Path to the merged ROOT file (default: mkShapes__ZpTreweighting.root)',
 )
 parser.add_argument(
-    '--write-dyzptrw',
+    '--write-json',
     default=None,
     metavar='PATH',
-    help='If given, write the updated dyZpTrw.py to this path after a successful fit '
+    help='If given, write the updated dyZpTrw.json to this path after a successful fit '
          '(requires -f). The file is overwritten.',
 )
 parser.add_argument(
     '--year',
     default='2022',
-    help="Year key in the DYrew dict written to dyZpTrw.py (default: '2022')",
+    help="Year key in the DYrew dict written to dyZpTrw.json (default: '2022')",
 )
 parser.add_argument(
     '--sample-type',
     default='LO',
-    help="Sample-type key in the DYrew dict written to dyZpTrw.py (default: 'LO')",
+    help="Sample-type key in the DYrew dict written to dyZpTrw.json (default: 'LO')",
 )
 args = parser.parse_args()
 
@@ -241,9 +243,9 @@ print(f"Integral of ratio histogram from 0 to 50 GeV: {integral_histo_ratio}")
 print(f"Normalization factor = {norm_factor}")
 
 # ---------------------------------------------------------------------------
-# Write updated dyZpTrw.py (only when --write-dyzptrw and -f are both given)
+# Write updated dyZpTrw.json (only when --write-json and -f are both given)
 # ---------------------------------------------------------------------------
-if args.write_dyzptrw and args.f:
+if args.write_json and args.f:
     wrote = False
     # 'fit_func', 'fit_result', 'fitfunc' are in scope from the last for-loop
     # iteration (Python loop variables persist after the loop).
@@ -263,20 +265,27 @@ if args.write_dyzptrw and args.f:
             # Prepend the integral normalization factor
             full_expr = f"{norm_factor}*{root_formula}"
 
-            dy_content = (
-                "DYrew={\n"
-                f"    '{args.year}': {{\n"
-                f"        '{args.sample_type}': \"{full_expr}\"\n"
-                "    }\n"
-                "}\n"
-            )
-            with open(args.write_dyzptrw, "w") as _f:
-                _f.write(dy_content)
-            print(f"\nWrote updated dyZpTrw.py → {args.write_dyzptrw}")
-            print(f"  Expression: {full_expr}")
+            # Read the existing JSON so other years/types are preserved.
+            existing = {}
+            if os.path.exists(args.write_json):
+                try:
+                    with open(args.write_json) as _fj:
+                        existing = json.load(_fj)
+                except json.JSONDecodeError as _e:
+                    print(f"WARNING: Existing JSON file '{args.write_json}' is malformed "
+                          f"({_e}); it will be overwritten.")
+
+            # Update only the requested year / sample-type key.
+            existing.setdefault(args.year, {})[args.sample_type] = full_expr
+
+            with open(args.write_json, "w") as _fj:
+                json.dump(existing, _fj, indent=4)
+                _fj.write("\n")
+            print(f"\nWrote updated dyZpTrw.json → {args.write_json}")
+            print(f"  [{args.year}][{args.sample_type}]: {full_expr}")
             wrote = True
         else:
-            print("\nWARNING: Fit did not converge; dyZpTrw.py was NOT updated.")
+            print("\nWARNING: Fit did not converge; dyZpTrw.json was NOT updated.")
     except NameError:
         print("\nWARNING: No fit results in scope (was -f passed?). "
-              "dyZpTrw.py was NOT updated.")
+              "dyZpTrw.json was NOT updated.")

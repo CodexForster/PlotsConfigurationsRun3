@@ -13,7 +13,7 @@ The script orchestrates the following steps:
   1c. (wait)                       poll condor until all jobs finish
   1d. mkShapesRDF -o 2 -f .        merge individual ROOT files (hadd)
   2.  extract_Zptrw.py             extract the Z pT reweighting function
-                                   and overwrite dyZpTrw.py
+                                   and overwrite dyZpTrw.json
 
   Round 2 — main analysis (optional)
   -----------------------------------
@@ -287,11 +287,11 @@ def phase1_merge(zptrw_dir, dry_run=False):
 
 
 def phase2_extract(zptrw_dir, cfg, year="2022", sample_type="LO", dry_run=False):
-    """Phase 2 — run extract_Zptrw.py to derive weights and update dyZpTrw.py."""
-    banner("Phase 2: Extract Z pT reweighting function → update dyZpTrw.py")
+    """Phase 2 — run extract_Zptrw.py to derive weights and update dyZpTrw.json."""
+    banner("Phase 2: Extract Z pT reweighting function → update dyZpTrw.json")
 
     merged_file = os.path.join(cfg["outputFolder"], cfg["outputFile"])
-    dyzptrw_path = os.path.join(zptrw_dir, "dyZpTrw.py")
+    dyzptrw_json = os.path.join(zptrw_dir, "dyZpTrw.json")
     extract_script = os.path.join(zptrw_dir, "extract_Zptrw.py")
 
     if not dry_run and not os.path.exists(merged_file):
@@ -304,16 +304,16 @@ def phase2_extract(zptrw_dir, cfg, year="2022", sample_type="LO", dry_run=False)
     cmd = [
         sys.executable, extract_script,
         "-f",
-        "--input",         merged_file,
-        "--write-dyzptrw", dyzptrw_path,
-        "--year",          year,
-        "--sample-type",   sample_type,
+        "--input",      merged_file,
+        "--write-json", dyzptrw_json,
+        "--year",       year,
+        "--sample-type", sample_type,
     ]
     rc = run_cmd(cmd, dry_run=dry_run, cwd=zptrw_dir)
     if rc != 0:
         sys.exit(f"ERROR: extract_Zptrw.py failed (exit code {rc})")
 
-    info(f"dyZpTrw.py updated → {dyzptrw_path}")
+    info(f"dyZpTrw.json updated → {dyzptrw_json}")
 
 
 def phase3_second_round(second_dir, dry_run=False):
@@ -368,12 +368,12 @@ def parse_args():
     parser.add_argument(
         "--year",
         default="2022",
-        help="Year key written to DYrew in dyZpTrw.py (default: '2022').",
+        help="Year key written to DYrew in dyZpTrw.json (default: '2022').",
     )
     parser.add_argument(
         "--sample-type",
         default="LO",
-        help="Sample-type key written to DYrew in dyZpTrw.py "
+        help="Sample-type key written to DYrew in dyZpTrw.json "
              "(default: 'LO').",
     )
 
@@ -407,7 +407,7 @@ def parse_args():
     skip.add_argument(
         "--skip-extract",
         action="store_true",
-        help="Skip Phase 2 (assume dyZpTrw.py is already up to date).",
+        help="Skip Phase 2 (assume dyZpTrw.json is already up to date).",
     )
 
     # ---- misc ----
@@ -479,7 +479,7 @@ def main():
             dry_run=args.dry_run,
         )
     else:
-        info("\n[skip-extract] Skipping weight extraction and dyZpTrw.py update.")
+        info("\n[skip-extract] Skipping weight extraction and dyZpTrw.json update.")
 
     # ---- Phase 3 (optional): Second analysis ----
     if args.second_analysis:
@@ -494,7 +494,7 @@ def main():
         info(f"  Monitor : mkShapesRDF -o 1 -f {args.second_analysis}")
         info(f"  Merge   : mkShapesRDF -o 2 -f {args.second_analysis}")
     else:
-        info("dyZpTrw.py has been updated.")
+        info("dyZpTrw.json has been updated.")
         info("To run the second-round analysis:")
         info("  cd <your-analysis-folder>")
         info("  mkShapesRDF -c 1")
