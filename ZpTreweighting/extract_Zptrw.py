@@ -1,6 +1,8 @@
 # =================================
 # Danush Shekar (UIC), 9Dec25
 # =================================
+import json
+import os
 import ROOT
 import mplhep as hep
 import matplotlib.pyplot as plt
@@ -15,9 +17,32 @@ plt.style.use(style)
 
 parser = argparse.ArgumentParser(description='Extract data and fit with Gaussian.')
 parser.add_argument('-f', action='store_true', help='Fit the ratio plot using Erf.')
+parser.add_argument(
+    '-i', '--input',
+    default='mkShapes__ZpTreweighting.root',
+    metavar='FILE',
+    help='Path to the merged ROOT file (default: mkShapes__ZpTreweighting.root)',
+)
+parser.add_argument(
+    '--write-json',
+    default=None,
+    metavar='PATH',
+    help='If given, write the updated dyZpTrw.json to this path after a successful fit '
+         '(requires -f). The file is overwritten.',
+)
+parser.add_argument(
+    '--year',
+    default='2022',
+    help="Year key in the DYrew dict written to dyZpTrw.json (default: '2022')",
+)
+parser.add_argument(
+    '--sample-type',
+    default='LO',
+    help="Sample-type key in the DYrew dict written to dyZpTrw.json (default: 'LO')",
+)
 args = parser.parse_args()
 
-root_file = ROOT.TFile("mkShapes__ZpTreweighting.root")
+root_file = ROOT.TFile(args.input)
 # root_file = ROOT.TFile("mkShapes__beforeZpTreweighting_highLepPtThreshold_30_18.root")
 zee_dir = root_file.Get("Zmm_0j")
 ptll_dir = zee_dir.Get("ptll")
@@ -208,7 +233,7 @@ for fitfunc, initguess, savename in zip(fitting_functions, initial_guesses, save
             params = [fit_func.GetParameter(i) for i in range(n_params)]
             # Replace [i] with parameter values
             for i, p in enumerate(params):
-                formula = formula.replace(f"[{i}]", f"{p:.3f}")
+                formula = formula.replace(f"[{i}]", f"{p:.6f}")
             print(f"Fit function with parameters: {formula}")
 
     c_ratio_only.SaveAs(f"ZpTreweighting_ratio_fit_{savename}.pdf")
@@ -216,3 +241,51 @@ for fitfunc, initguess, savename in zip(fitting_functions, initial_guesses, save
 print(f"Integral of DY histogram from 0 to 50 GeV: {integral_histo_DY}")
 print(f"Integral of ratio histogram from 0 to 50 GeV: {integral_histo_ratio}")
 print(f"Normalization factor = {norm_factor}")
+
+# ---------------------------------------------------------------------------
+# Write updated dyZpTrw.json (only when --write-json and -f are both given)
+# ---------------------------------------------------------------------------
+if args.write_json and args.f:
+    wrote = False
+    # 'fit_func', 'fit_result', 'fitfunc' are in scope from the last for-loop
+    # iteration (Python loop variables persist after the loop).
+    try:
+        if fit_result and fit_result.IsValid():
+            # Build a ROOT / C++ compatible formula string with full precision.
+            root_formula = fitfunc  # e.g. "[0]*([1]*TMath::Erf(...) + [4]*x + [5]*x**2 + [6])"
+            n_params = fit_func.GetNpar()
+            params = [fit_func.GetParameter(i) for i in range(n_params)]
+            for i, p in enumerate(params):
+                root_formula = root_formula.replace(f"[{i}]", f"{p:.6f}")
+            # Convert Python-style x**2 to ROOT / C++ TMath::Sq(x)
+            root_formula = root_formula.replace("x**2", "TMath::Sq(x)")
+            # Tidy up double signs that can appear after parameter substitution
+            root_formula = root_formula.replace("+ -", "- ")
+            root_formula = root_formula.replace("- -", "+ ")
+            # Prepend the integral normalization factor
+            full_expr = f"{norm_factor}*{root_formula}"
+
+            # Read the existing JSON so other years/types are preserved.
+            existing = {}
+            if os.path.exists(args.write_json):
+                try:
+                    with open(args.write_json) as _fj:
+                        existing = json.load(_fj)
+                except json.JSONDecodeError as _e:
+                    print(f"WARNING: Existing JSON file '{args.write_json}' is malformed "
+                          f"({_e}); it will be overwritten.")
+
+            # Update only the requested year / sample-type key.
+            existing.setdefault(args.year, {})[args.sample_type] = full_expr
+
+            with open(args.write_json, "w") as _fj:
+                json.dump(existing, _fj, indent=4)
+                _fj.write("\n")
+            print(f"\nWrote updated dyZpTrw.json → {args.write_json}")
+            print(f"  [{args.year}][{args.sample_type}]: {full_expr}")
+            wrote = True
+        else:
+            print("\nWARNING: Fit did not converge; dyZpTrw.json was NOT updated.")
+    except NameError:
+        print("\nWARNING: No fit results in scope (was -f passed?). "
+              "dyZpTrw.json was NOT updated.")
