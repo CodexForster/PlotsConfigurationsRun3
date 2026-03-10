@@ -6,6 +6,12 @@ Automated Z pT reweighting extraction workflow.
 
 The script orchestrates the following steps:
 
+  Pre-Phase 1 — prepare configuration files
+  ------------------------------------------
+  0a. Patch configuration.py: set tag = "{year}_{sample_type}_{original_tag}"
+  0b. Comment out the addSampleWeight line for DY pT reweighting in samples.py
+      (weights cannot be applied before they are derived)
+
   Round 1 — ZpTreweighting analysis
   ----------------------------------
   1a. mkShapesRDF -c 1            compile configuration
@@ -14,11 +20,18 @@ The script orchestrates the following steps:
   1d. mkShapesRDF -o 2 -f .        merge individual ROOT files (hadd)
   2.  extract_Zptrw.py             extract the Z pT reweighting function
                                    and overwrite dyZpTrw.json
+  2b. Move extract_Zptrw.py plots to plots_{year}_{sample_type}_obtainWeights/
+  2c. mkPlot --onlyPlot cratio     create comparison plots on the merged file
 
-  Round 2 — main analysis (optional)
-  -----------------------------------
-  3a. mkShapesRDF -c 1            compile second analysis
-  3b. mkShapesRDF -o 0 -f . -b 1  submit second-round condor jobs
+  Round 2 — main analysis (optional, --second-analysis DIR)
+  ----------------------------------------------------------
+  3a. Update DYrew key in aliases.py with the correct year/sample-type
+  3b. Uncomment addSampleWeight for DY pT reweighting in samples.py
+  3c. mkShapesRDF -c 1            compile second analysis
+  3d. mkShapesRDF -o 0 -f . -b 1  submit second-round condor jobs
+  3e. (wait)                       poll condor until all jobs finish
+  3f. mkShapesRDF -o 2 -f .        merge second-round ROOT files
+  3g. mkPlot --onlyPlot cratio     create comparison plots for second round
 
 Prerequisites
 -------------
@@ -30,22 +43,23 @@ Prerequisites
 Typical usage
 -------------
   # Run from inside ZpTreweighting/ or give the folder explicitly:
-  python run_ZpTrw_workflow.py
+  python automate.py --year 2022 --sample-type LO
 
   # Also kick off the second-round analysis immediately after:
-  python run_ZpTrw_workflow.py --second-analysis ../HWW/ggH_SF/2022
+  python automate.py --year 2022 --sample-type LO --second-analysis ../HWW/ggH_SF/2022
 
   # Skip submission if jobs were already submitted:
-  python run_ZpTrw_workflow.py --skip-submit
+  python automate.py --year 2022 --sample-type LO --skip-submit
 
   # Dry run to see what commands would be executed:
-  python run_ZpTrw_workflow.py --dry-run
+  python automate.py --year 2022 --sample-type LO --dry-run
 """
 
 import argparse
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -286,6 +300,218 @@ def phase1_merge(zptrw_dir, dry_run=False):
         sys.exit(f"ERROR: Phase 1d - mkShapesRDF -o 2 (merge) failed (exit code {rc})")
 
 
+# ---------------------------------------------------------------------------
+# Configuration / samples file patching helpers
+# ---------------------------------------------------------------------------
+
+def patch_configuration_tag(cfg_file, year, sample_type, dry_run=False):
+    """Prepend '{year}_{sample_type}_' to the tag variable in configuration.py.
+
+    E.g. tag = "ZpTreweighting" becomes tag = "2022_LO_ZpTreweighting".
+    The file is only written when *dry_run* is False.
+    """
+    banner("Patching configuration.py: prepending year/sample-type to tag")
+
+    if not os.path.exists(cfg_file):
+        info(f"WARNING: {cfg_file} not found; skipping tag patch.")
+        return
+
+    with open(cfg_file) as fh:
+        content = fh.read()
+
+    prefix = f"{year}_{sample_type}_"
+    # Match: tag = "..." or tag = '...' (not already prefixed).
+    # Build pattern with f-string so the negative lookahead uses the actual prefix.
+    pattern = re.compile(
+        rf"""^(\s*tag\s*=\s*["'])(?!{re.escape(prefix)})([^"']+)(["'])""",
+        re.MULTILINE,
+    )
+
+    def _replace(m):
+        old_tag = m.group(2)
+        new_tag = prefix + old_tag
+        info(f"  tag: '{old_tag}' → '{new_tag}'")
+        return m.group(1) + new_tag + m.group(3)
+
+    new_content, count = pattern.subn(_replace, content, count=1)
+    if count == 0:
+        info("WARNING: Could not find 'tag = ...' line in configuration.py; "
+             "skipping tag patch. Verify that configuration.py contains a "
+             "tag = \"<name>\" assignment at module level.")
+        return
+
+    if not dry_run:
+        with open(cfg_file, "w") as fh:
+            fh.write(new_content)
+        info(f"  Updated: {cfg_file}")
+    else:
+        info("[dry-run] Would update configuration.py tag.")
+
+
+def comment_addsampleweight_dy(samples_file, dry_run=False):
+    """Comment out the addSampleWeight line for DY pT reweighting in samples.py.
+
+    Targets any uncommented line of the form::
+
+        addSampleWeight(samples, 'DY', ..., 'DY_<TYPE>_ZpTrw')
+
+    so that the weights are NOT applied during the first round (weight derivation).
+    """
+    banner("Commenting out addSampleWeight for DY pT reweighting in samples.py")
+
+    if not os.path.exists(samples_file):
+        info(f"WARNING: {samples_file} not found; skipping.")
+        return
+
+    with open(samples_file) as fh:
+        content = fh.read()
+
+    # Match an un-commented addSampleWeight call referencing a DY_*_ZpTrw weight.
+    # Pattern breakdown:
+    #   ^(?![ \t]*#)           — line must not start with optional whitespace + '#'
+    #   ([ \t]*addSampleWeight — capture indentation + function name
+    #    \s*\([^)]*            — opening paren and any args
+    #    ['"]DY_..._ZpTrw['"] — the DY ZpTrw weight argument
+    #    [^)]*\))              — remaining args + closing paren
+    pattern = re.compile(
+        r"^(?![ \t]*#)([ \t]*addSampleWeight\s*\([^)]*['\"]DY_[A-Za-z0-9]+_ZpTrw['\"][^)]*\))",
+        re.MULTILINE,
+    )
+
+    if not pattern.search(content):
+        info("WARNING: No uncommented addSampleWeight DY ZpTrw line found; skipping.")
+        return
+
+    new_content = pattern.sub(r"# \1", content)
+    info("  Commented out addSampleWeight DY ZpTrw line.")
+
+    if not dry_run:
+        with open(samples_file, "w") as fh:
+            fh.write(new_content)
+        info(f"  Updated: {samples_file}")
+    else:
+        info("[dry-run] Would comment out addSampleWeight DY ZpTrw line.")
+
+
+def uncomment_addsampleweight_dy(samples_file, dry_run=False):
+    """Uncomment the addSampleWeight line for DY pT reweighting in samples.py.
+
+    Reverses the effect of :func:`comment_addsampleweight_dy` so that the
+    derived weights ARE applied during the second round of analysis.
+    """
+    banner("Uncommenting addSampleWeight for DY pT reweighting in samples.py")
+
+    if not os.path.exists(samples_file):
+        info(f"WARNING: {samples_file} not found; skipping.")
+        return
+
+    with open(samples_file) as fh:
+        content = fh.read()
+
+    # Match a commented addSampleWeight call referencing a DY_*_ZpTrw weight.
+    pattern = re.compile(
+        r"^([ \t]*)#[ \t]*(addSampleWeight\s*\([^)]*['\"]DY_[A-Za-z0-9]+_ZpTrw['\"][^)]*\))",
+        re.MULTILINE,
+    )
+
+    if not pattern.search(content):
+        info("WARNING: No commented addSampleWeight DY ZpTrw line found; skipping.")
+        return
+
+    new_content = pattern.sub(r"\1\2", content)
+    info("  Uncommented addSampleWeight DY ZpTrw line.")
+
+    if not dry_run:
+        with open(samples_file, "w") as fh:
+            fh.write(new_content)
+        info(f"  Updated: {samples_file}")
+    else:
+        info("[dry-run] Would uncomment addSampleWeight DY ZpTrw line.")
+
+
+def update_aliases_dyrew_key(aliases_file, year, sample_type, dry_run=False):
+    """Replace DYrew['old_year']['old_type'] with DYrew['{year}']['{sample_type}'] in aliases.py.
+
+    This ensures the second-round analysis loads the weights that were just derived.
+    All occurrences of the pattern are updated.
+    """
+    banner(f"Updating DYrew key in {os.path.basename(aliases_file)}")
+
+    if not os.path.exists(aliases_file):
+        info(f"WARNING: {aliases_file} not found; skipping DYrew key update.")
+        return
+
+    with open(aliases_file) as fh:
+        content = fh.read()
+
+    # Match DYrew['any']['any'] or DYrew["any"]["any"].
+    # Single and double quotes are both supported to handle files with either style.
+    pattern = re.compile(r"""DYrew\[(?:'[^']*'|"[^"]*")\]\[(?:'[^']*'|"[^"]*")\]""")
+
+    matches = pattern.findall(content)
+    if not matches:
+        info(f"No DYrew['...']['...'] references found in {aliases_file}; skipping.")
+        return
+
+    replacement = f"DYrew['{year}']['{sample_type}']"
+    new_content = pattern.sub(replacement, content)
+    info(f"  Updated {len(matches)} DYrew key reference(s) → ['{year}']['{sample_type}']")
+
+    if not dry_run:
+        with open(aliases_file, "w") as fh:
+            fh.write(new_content)
+        info(f"  Updated: {aliases_file}")
+    else:
+        info(f"[dry-run] Would update DYrew key in {aliases_file}.")
+
+
+# ---------------------------------------------------------------------------
+# Plot helpers
+# ---------------------------------------------------------------------------
+
+def move_zptrw_plots(zptrw_dir, year, sample_type, dry_run=False):
+    """Move plots produced by extract_Zptrw.py into plots_{year}_{sample_type}_obtainWeights/.
+
+    Files matching ``ZpTreweighting_*.pdf`` and ``ZpTreweighting_*.png`` in
+    *zptrw_dir* are relocated to the archive sub-folder.
+    """
+    banner("Moving extract_Zptrw.py plots to archive folder")
+
+    target_dir = os.path.join(zptrw_dir, f"plots_{year}_{sample_type}_obtainWeights")
+    plot_files = (
+        glob.glob(os.path.join(zptrw_dir, "ZpTreweighting_*.pdf"))
+        + glob.glob(os.path.join(zptrw_dir, "ZpTreweighting_*.png"))
+    )
+
+    if not plot_files:
+        info("No ZpTreweighting_*.pdf/png files found to move.")
+        return
+
+    info(f"Target folder: {target_dir}")
+    for src in plot_files:
+        dest = os.path.join(target_dir, os.path.basename(src))
+        info(f"  {os.path.basename(src)} → {os.path.relpath(dest, zptrw_dir)}")
+        if not dry_run:
+            os.makedirs(target_dir, exist_ok=True)
+            shutil.move(src, dest)
+
+    if dry_run:
+        info("[dry-run] Would create target folder and move plot files.")
+
+
+def run_mkplot(analysis_dir, dry_run=False):
+    """Run ``mkPlot --onlyPlot cratio --showIntegralLegend 1 --fileFormats png``."""
+    banner(f"Running mkPlot in {analysis_dir}")
+    rc = run_cmd(
+        ["mkPlot", "--onlyPlot", "cratio", "--showIntegralLegend", "1",
+         "--fileFormats", "png"],
+        dry_run=dry_run,
+        cwd=analysis_dir,
+    )
+    if rc != 0:
+        info(f"WARNING: mkPlot exited with code {rc}. Continuing workflow.")
+
+
 def phase2_extract(zptrw_dir, cfg, year="2022", sample_type="LO", dry_run=False):
     """Phase 2 — run extract_Zptrw.py to derive weights and update dyZpTrw.json."""
     banner("Phase 2: Extract Z pT reweighting function → update dyZpTrw.json")
@@ -316,9 +542,28 @@ def phase2_extract(zptrw_dir, cfg, year="2022", sample_type="LO", dry_run=False)
     info(f"dyZpTrw.json updated → {dyzptrw_json}")
 
 
-def phase3_second_round(second_dir, dry_run=False):
-    """Phase 3 — compile and submit the second-round analysis."""
+def phase3_second_round(second_dir, year, sample_type, poll_interval=120,
+                        skip_second_wait=False, skip_second_merge=False,
+                        dry_run=False):
+    """Phase 3 — prepare, compile, submit, wait, merge, and plot second-round analysis.
+
+    Before compiling, this function:
+    * Updates the DYrew year/sample-type key in ``aliases.py`` so the correct
+      weights are loaded.
+    * Uncomments the ``addSampleWeight`` line for DY pT reweighting in
+      ``samples.py`` so the weights are actually applied.
+
+    After submitting it waits for the HTCondor jobs to finish (unless
+    *skip_second_wait* is True), merges the ROOT files, and runs mkPlot.
+    """
     banner(f"Phase 3: Second-round mkShapesRDF in\n  {second_dir}")
+
+    # Update aliases.py and samples.py before compiling
+    aliases_file = os.path.join(second_dir, "aliases.py")
+    update_aliases_dyrew_key(aliases_file, year, sample_type, dry_run=dry_run)
+
+    samples_file = os.path.join(second_dir, "samples.py")
+    uncomment_addsampleweight_dy(samples_file, dry_run=dry_run)
 
     rc = run_cmd(["mkShapesRDF", "-c", "1"], dry_run=dry_run, cwd=second_dir)
     if rc != 0:
@@ -335,6 +580,51 @@ def phase3_second_round(second_dir, dry_run=False):
         sys.exit(
             f"ERROR: mkShapesRDF -o 0 failed in {second_dir} (exit code {rc})"
         )
+
+    # Wait for second-round condor jobs
+    second_cfg_file = os.path.join(second_dir, "configuration.py")
+    has_cfg = os.path.exists(second_cfg_file)
+
+    if not skip_second_wait:
+        if has_cfg or dry_run:
+            banner("Phase 3c: Waiting for second-round HTCondor jobs to complete")
+            second_cfg = (
+                read_configuration(second_cfg_file)
+                if has_cfg
+                else {"tag": "unknown", "batchFolder": "condor",
+                      "outputFolder": ".", "outputFile": "output.root"}
+            )
+            batch_dir = os.path.join(second_dir, second_cfg["batchFolder"])
+            wait_for_condor_jobs(
+                batch_dir=batch_dir,
+                tag=second_cfg["tag"],
+                poll_interval=poll_interval,
+                dry_run=dry_run,
+            )
+        else:
+            info(f"WARNING: No configuration.py found in {second_dir}; "
+                 "skipping second-round condor wait.")
+    else:
+        info("\n[skip-second-wait] Skipping second-round condor wait.")
+
+    # Merge second-round ROOT files
+    if not skip_second_merge:
+        banner("Phase 3d: Merge second-round ROOT files")
+        rc = run_cmd(
+            ["mkShapesRDF", "-o", "2", "-f", "."],
+            dry_run=dry_run,
+            cwd=second_dir,
+        )
+        if rc != 0:
+            sys.exit(
+                f"ERROR: mkShapesRDF -o 2 (merge) failed in {second_dir} "
+                f"(exit code {rc})"
+            )
+    else:
+        info("\n[skip-second-merge] Skipping second-round ROOT file merge.")
+
+    # Create RDF plots for the second-round merged output
+    run_mkplot(second_dir, dry_run=dry_run)
 
 
 # ---------------------------------------------------------------------------
@@ -357,11 +647,11 @@ def parse_args():
     )
     parser.add_argument(
         "--second-analysis",
-        default=".",
+        default=None,
         metavar="DIR",
         help="Path to the second-round analysis folder. "
-             "When given, Phase 3 compiles and submits jobs there after "
-             "dyZpTrw.py has been updated.",
+             "When given, Phase 3 updates aliases/samples, compiles, submits, "
+             "waits, merges, and runs mkPlot there after dyZpTrw.py has been updated.",
     )
 
     # ---- physics ----
@@ -409,6 +699,16 @@ def parse_args():
         action="store_true",
         help="Skip Phase 2 (assume dyZpTrw.json is already up to date).",
     )
+    skip.add_argument(
+        "--skip-second-wait",
+        action="store_true",
+        help="Skip waiting for second-round HTCondor jobs (Phase 3c).",
+    )
+    skip.add_argument(
+        "--skip-second-merge",
+        action="store_true",
+        help="Skip merging second-round ROOT files (Phase 3d).",
+    )
 
     # ---- misc ----
     parser.add_argument(
@@ -440,11 +740,17 @@ def main():
     if args.dry_run:
         info("*** DRY-RUN mode — no commands will be executed ***")
 
+    # ---- Pre-Phase 1: Patch configuration.py tag and comment out DY pT rw weight ----
+    patch_configuration_tag(cfg_file, args.year, args.sample_type, dry_run=args.dry_run)
+
     cfg = read_configuration(cfg_file)
     info(f"tag          : {cfg['tag']}")
     info(f"outputFolder : {cfg['outputFolder']}")
     info(f"outputFile   : {cfg['outputFile']}")
     info(f"batchFolder  : {cfg['batchFolder']}")
+
+    samples_file = os.path.join(zptrw_dir, "samples.py")
+    comment_addsampleweight_dy(samples_file, dry_run=args.dry_run)
 
     # ---- Phase 1a+1b: Submit ----
     if not args.skip_submit:
@@ -478,21 +784,32 @@ def main():
             sample_type=args.sample_type,
             dry_run=args.dry_run,
         )
+        # Move plots produced by extract_Zptrw.py to archive folder
+        move_zptrw_plots(zptrw_dir, args.year, args.sample_type, dry_run=args.dry_run)
+        # Create comparison plots from the merged ROOT file
+        run_mkplot(zptrw_dir, dry_run=args.dry_run)
     else:
-        info("\n[skip-extract] Skipping weight extraction and dyZpTrw.json update.")
+        info("\n[skip-extract] Skipping weight extraction, plot archiving, and mkPlot "
+             "(assumes dyZpTrw.json and plots are already up to date).")
 
     # ---- Phase 3 (optional): Second analysis ----
     if args.second_analysis:
         second_dir = os.path.abspath(args.second_analysis)
         if not os.path.isdir(second_dir):
             sys.exit(f"ERROR: Second-analysis folder not found: {second_dir}")
-        phase3_second_round(second_dir, dry_run=args.dry_run)
+        phase3_second_round(
+            second_dir,
+            year=args.year,
+            sample_type=args.sample_type,
+            poll_interval=args.poll_interval,
+            skip_second_wait=args.skip_second_wait,
+            skip_second_merge=args.skip_second_merge,
+            dry_run=args.dry_run,
+        )
 
     banner("Workflow complete!")
     if args.second_analysis:
-        info("Second-round jobs submitted. Next steps:")
-        info(f"  Monitor : mkShapesRDF -o 1 -f {args.second_analysis}")
-        info(f"  Merge   : mkShapesRDF -o 2 -f {args.second_analysis}")
+        info("Second-round analysis finished. Plots are in the analysis folder.")
     else:
         info("dyZpTrw.json has been updated.")
         info("To run the second-round analysis:")
