@@ -278,3 +278,339 @@ For data events:
 ```
 w_event = LepWPCut × METFilter_DATA × DataTrig[primaryDataset]
 ```
+
+---
+
+## 5. Jet Scale Factors — Complete Reference
+
+This section documents **all jet-related scale factors and systematic uncertainties** found across the repository. They are grouped by category; where the ZpTreweighting folder currently applies (or could apply) a given SF, that is noted explicitly.
+
+---
+
+### 5.1 Jet Energy Corrections Applied in Pre-Processing (`MCCorr2022v12JetScaling`)
+
+Before any analysis is run, jets in MC already receive standard CMS Jet Energy Corrections (JEC) as part of the NanoAOD production step encoded in the `mcSteps` string. For all Run3 2022 analyses in this repository (including ZpTreweighting), the MC processing step is:
+
+```
+MCl2loose2022v12__MCCorr2022v12JetScaling__l2tight
+```
+
+The `MCCorr2022v12JetScaling` step applies:
+- **JEC (Jet Energy Corrections / JES):** Factory-calibrated L1FastJet + L2Relative + L3Absolute corrections that bring simulated jet pT to the correct absolute energy scale, using the JME POG global tag (e.g. `Summer22_22Sep2023_V2_MC` for 2022).
+- **JER (Jet Energy Resolution) smearing:** Stochastic smearing of MC jet pT to match the broader resolution observed in data, based on the JME POG resolution maps (e.g. `JR_Winter22Run3_V1_MC`).
+
+These corrections are applied in-situ (inside the NanoAOD post-processing) so that `CleanJet_pt` in the analysis already reflects corrected jets. They are not an event weight but a per-jet four-vector rescaling.
+
+**Relevant runner code:** `WW_Run3/runner.py`, `ControlRegions/DY/2022/runner.py` (the `recomputeJets` method, which applies JEC/JER and jet-veto-map masks on top of NanoAOD jets using `correctionlib` JSON files).
+
+---
+
+### 5.2 Jet Energy Scale (JES) Systematic Uncertainties
+
+**What it is:** The JES uncertainty accounts for residual calibration uncertainties in the jet energy scale. It is implemented by varying all jet four-momenta (pT, and propagated to MET) simultaneously up and down according to each uncertainty source.
+
+**How it is applied:** `suffix` shape nuisance — separate MC samples (or RDF variations) are produced with up/down-varied jets, and the analysis is re-run on those.
+
+**JES sources in Run 3 (reduced set of 11, used in most Run3 analyses like `ControlRegions/3l/2022_v12`):**
+
+| Source | Year tag | CMS nuisance name | Correlation |
+|--------|----------|-------------------|-------------|
+| `Absolute` | run-independent | `CMS_scale_j_Absolute` | fully correlated across years |
+| `Absolute_2022` | 2022-specific | `CMS_scale_j_Absolute_2022` | decorrelated |
+| `FlavorQCD` | run-independent | `CMS_scale_j_FlavorQCD` | fully correlated |
+| `BBEC1` | run-independent | `CMS_scale_j_BBEC1` | fully correlated |
+| `BBEC1_2022` | 2022-specific | `CMS_scale_j_BBEC1_2022` | decorrelated |
+| `EC2` | run-independent | `CMS_scale_j_EC2` | fully correlated |
+| `EC2_2022` | 2022-specific | `CMS_scale_j_EC2_2022` | decorrelated |
+| `HF` | run-independent | `CMS_scale_j_HF` | fully correlated |
+| `HF_2022` | 2022-specific | `CMS_scale_j_HF_2022` | decorrelated |
+| `RelativeBal` | run-independent | `CMS_scale_j_RelativeBal` | fully correlated |
+| `RelativeSample_2022` | 2022-specific | `CMS_scale_j_RelativeSample_2022` | decorrelated |
+
+For older analyses (Run 2 / UL, e.g. `WH_chargeAsymmetry`, `VBF_differential`, `VBS_OS_pol`), a different grouping is used (e.g. `JESAbsolute`, `JESBBEC1`, `JESEC2`, `JESFlavorQCD`, `JESHF`, `JESRelativeBal`, `JESRelativeSample_{year}`).
+
+**Why needed:** Different physical effects cause the jet energy scale to deviate from perfect calibration. The sources above are factorised to decorrelate run-period-specific effects from effects correlated across all data-taking periods, enabling proper combination of multiple years. JES variations also propagate to MET (through the recoil).
+
+**Example configuration:** `ControlRegions/3l/2022_v12/nuisances.py`, `HWW/ggH_SF/2022/nuisances.py`
+
+**Status in ZpTreweighting:** JES is mentioned in a comment in `aliases.py` (`# using Alt(CleanJet_pt, n, 0) instead of Sum(CleanJet_pt >= 30) because jet pt ordering is not strictly followed in JES-varied samples`), but JES nuisances are **not currently added** to `ZpTreweighting/nuisances.py`. Since ZpTreweighting uses the 0-jet category as signal region, JES primarily shifts the jet multiplicity rather than the key observables, but it should be considered for the background subtraction.
+
+---
+
+### 5.3 Jet Energy Resolution (JER) Systematic Uncertainty
+
+**What it is:** The JER uncertainty accounts for the fact that the MC jet pT smearing (applied to match the broader data resolution) may not be perfectly calibrated. It is implemented by varying the smearing amount up and down.
+
+**How it is applied:** `suffix` shape nuisance — up/down-varied jet collections are used.
+
+**Run3 approach (split by η regions):**
+
+In `ControlRegions/WZ/2022EE_v12`, `WH_SS/2022EE`, `ControlRegions/DY/2022/nuisances_ALL.py`, and related files, JER is split into 6 η-region nuisances to allow decorrelation:
+
+```python
+jer_syst = ["JER_0", "JER_1", "JER_2", "JER_3", "JER_4", "JER_5"]
+# CMS names: CMS_res_JER_0_j, ..., CMS_res_JER_5_j
+```
+
+**Run3 simplified approach (single JER, used in HWW/3l/ZpTreweighting-adjacent analyses):**
+
+```python
+nuisances['JER'] = {
+    'name': 'CMS_res_j_2022',
+    'kind': 'suffix', 'type': 'shape',
+    'mapUp': 'jerup', 'mapDown': 'jerdo',
+    'folderUp': makeMCDirectory('jerup_suffix'),
+    'folderDown': makeMCDirectory('jerdo_suffix'),
+}
+```
+
+**Run 2 approach:** Single `JER` nuisance, e.g. `CMS_res_j_2016`, `CMS_res_j_2017`, `CMS_res_j_2018`.
+
+**Why needed:** MC jets are narrower than data jets because the simulation does not fully reproduce detector noise and pile-up contributions to jet energy. JER smearing corrects this but introduces an uncertainty from the measurement of the resolution in data.
+
+**Example configuration:** `ControlRegions/3l/2022_v12/nuisances.py`, `HWW/ggH_SF/2022/nuisances.py`
+
+**Status in ZpTreweighting:** **Not currently in `nuisances.py`.** Should be added for the background samples (see §5.9).
+
+---
+
+### 5.4 Unclustered Energy / MET Scale (`CMS_scale_met`)
+
+**What it is:** Jet energy corrections are propagated to MET, but energy from soft particles not clustered into jets ("unclustered energy") introduces an additional MET uncertainty. It is implemented by varying `PuppiMET_pt` up and down by shifting unclustered energy.
+
+**How it is applied:** `suffix` shape nuisance:
+
+```python
+nuisances['MET'] = {
+    'name': 'CMS_scale_met_2022',
+    'kind': 'suffix', 'type': 'shape',
+    'mapUp': 'unclustEnup', 'mapDown': 'unclustEndo',
+    'folderUp': makeMCDirectory('unclustEnup_suffix'),
+    'folderDown': makeMCDirectory('unclustEndo_suffix'),
+}
+```
+
+**Why needed:** MET is sensitive to all particles in the event. Soft unclustered energy (particles below the jet threshold) is not corrected by JES/JER and has its own calibration uncertainty.
+
+**Example configuration:** `ControlRegions/3l/2022_v12/nuisances.py`, `HWW/ggH_SF/2022/nuisances.py`
+
+**Status in ZpTreweighting:** **Not currently in `nuisances.py`.** The ZpTreweighting analysis does not make a hard cut on MET, so its impact on `ptll` is small, but it should in principle be included for completeness.
+
+---
+
+### 5.5 Jet Veto Map (`jetvetomaps`)
+
+**What it is:** A 2D map in (η, φ) that flags jets reconstructed in regions of the CMS detector with known hot cells, dead channels, or other noise sources during specific run ranges. Jets falling in a vetoed region are removed from the jet collection before analysis.
+
+**How it is applied:** Not an event weight; it is a boolean mask on jets applied inside the `recomputeJets` function in the runner scripts. The map is read from a `correctionlib` JSON file:
+
+```python
+pathToJson = ".../jetvetomaps/Run2022/jetvetomaps.json"
+globalTag  = "Summer22_23Sep2023_RunCD_V1"    # for 2022 pre-EE
+globalTag  = "Summer22EE_23Sep2023_RunEFG_V1" # for 2022 post-EE
+```
+
+A jet is vetoed if it falls in a masked (η, φ) cell (evaluated via `getJetMask` C++ function in the runner).
+
+**Why needed:** Detector problems in certain η–φ regions during specific run periods cause fake jets with anomalously high pT or energy fractions. These must be removed to avoid biasing jet-based observables.
+
+**Example configuration:** `WW_Run3/runner.py`, `ControlRegions/DY/2022/runner.py`, `LeptonID/2022/runner.py`
+
+**Status in ZpTreweighting:** The jet veto map is applied at the NanoAOD processing level (`MCCorr2022v12JetScaling`) so it is already accounted for in the sample files used by ZpTreweighting. No additional alias or nuisance is needed in the analysis configuration.
+
+---
+
+### 5.6 Jet Horn Veto (`noJetInHorn`)
+
+**What it is:** An additional selection removing events with jets in the "horn" region of the CMS calorimeter (2.6 < |η| < 3.1, 30 < pT < 50 GeV) where the ECAL endcap meets the HF calorimeter, causing anomalous jet reconstruction in certain run periods.
+
+**How it is applied:** Boolean alias in `aliases.py`, applied as part of preselection or as a selection category:
+
+```python
+aliases['noJetInHorn'] = {
+    'expr': 'Sum(CleanJet_pt > 30 && CleanJet_pt < 50 && abs(CleanJet_eta) > 2.6 && abs(CleanJet_eta) < 3.1) == 0',
+}
+```
+
+**Why needed:** The calorimeter transition region has large jet energy resolution and a high fake-jet rate. Requiring no jet in this region makes the analysis more stable against instrumental effects.
+
+**Example configuration:** Defined in `ZpTreweighting/aliases.py`; applied in `WH_SS/2023/aliases.py`, `ControlRegions/SS/2022_v12/aliases.py`.
+
+**Status in ZpTreweighting:** The alias is defined in `aliases.py` but not applied in the preselection (replaced by `zeroJet`). A comment in `cuts.py` states "noJetInHorn replaced by zeroJet".
+
+---
+
+### 5.7 B-Tagging Scale Factors
+
+B-tagging SFs correct the per-jet probability to pass a b-tagging discriminant threshold, accounting for differences between data and MC b-tag efficiencies and mistag rates. There are two main approaches used in this repository:
+
+#### 5.7.1 Shape Reweighting (`btagSF_deepjet_shape`) — Run 2 / WW\_Run3
+
+Used in `WW_Run3`, `WH_chargeAsymmetry` (UL), `ControlRegions/WZ`, older HWW analyses, and VBS/VBF (Run2) analyses. The per-jet NanoAOD branch `Jet_btagSF_{algo}_shape` contains a weight that reweights the full b-discriminant shape in MC to match data. The event-level SF is the product of all per-jet weights:
+
+```python
+bVetoSF = TMath::Exp(Sum(LogVec(
+    (CleanJet_pt>20 && |eta|<2.5) * Jet_btagSF_{algo}_shape[jetIdx]
+  + 1*(CleanJet_pt<20 || |eta|>2.5)
+)))
+bReqSF  = TMath::Exp(Sum(LogVec(
+    (CleanJet_pt>30 && |eta|<2.5) * Jet_btagSF_{algo}_shape[jetIdx]
+  + 1*(CleanJet_pt<30 || |eta|>2.5)
+)))
+btagSF  = (bVeto || (topcr && zeroJet))*bVetoSF + (topcr && !zeroJet)*bReqSF
+```
+
+Systematic variations use up/down-shifted versions: `btagSF_deepjet_shape_up_{source}` / `btagSF_deepjet_shape_down_{source}` for sources `jes, lf, hf, lfstats1, lfstats2, hfstats1, hfstats2, cferr1, cferr2` (currently commented out in most Run3 analyses and replaced by the fixed-WP approach below).
+
+**Algorithms and SF branch names:**
+- DeepJet / DeepFlavB: `Jet_btagSF_deepjet_shape`
+- ParticleNet (PNetB): `Jet_btagSF_particleNet_shape` (NanoAOD branch uses `partNet` prefix: `Jet_btagSF_partNet_shape`)
+- RobustParTAK4B: `Jet_btagSF_robustParticleTransformer_shape` (NanoAOD branch uses `partTransformer` prefix: `Jet_btagSF_partTransformer_shape`)
+
+#### 5.7.2 Fixed-WP Efficiency × SF Method (`btagSFbc`, `btagSFlight`) — Run3 standard
+
+Used in `HWW` (2022, 2022EE, 2023, 2023BPix), `ControlRegions/3l` (2022\_v12, 2022EE\_v12, 2023\_v12, 2023BPix\_v12, 2024\_v15), `ControlRegions/WZ`, and related Run3 analyses. This method explicitly computes efficiency-weighted event-level SFs using correctionlib POG JSON files, split by jet flavour:
+
+- **`btagSFbc`** — covers b-jets and c-jets (heavy flavour), evaluated using `btagSF{bc}_{shift}(...)` (defined by `evaluate_btagSFbc.cc` macro).
+- **`btagSFlight`** — covers light-flavour jets (udsg), evaluated using `btagSF{light}_{shift}(...)` (defined by `evaluate_btagSFlight.cc` macro).
+
+The aliases loop over shifts:
+```python
+for flavour in ['bc', 'light']:
+    for shift in ['central', 'up_uncorrelated', 'down_uncorrelated', 'up_correlated', 'down_correlated']:
+        aliases[f'btagSF{flavour}_{shift}'] = { ... }
+```
+
+The combined SF weight is:
+```python
+SFweight = SFweight2l * LepWPCut * LepWPSF * btagSFbc * btagSFlight
+```
+
+**Available taggers and WPs** (from `aliases.py` dictionaries):
+
+| Tagger | Code name | Loose WP (2022) | Medium WP (2022) | Tight WP (2022) |
+|--------|-----------|-----------------|------------------|-----------------|
+| DeepJet / DeepFlavB | `deepjet` | 0.0583 | 0.3086 | 0.7183 |
+| ParticleNet (PNetB) | `particleNet` | 0.0470 | 0.2450 | 0.6734 |
+| RobustParTAK4B | `robustParticleTransformer` | 0.0849 | 0.4319 | 0.8482 |
+
+**Systematic nuisances for fixed-WP approach** (in nuisances.py):
+
+```python
+for flavour in ['bc', 'light']:
+    for corr in ['uncorrelated', 'correlated']:
+        # correlated: same across years (e.g. CMS_btagSFbc_correlated)
+        # uncorrelated: year-specific (e.g. CMS_btagSFbc_2022, CMS_btagSFlight_2022)
+        nuisances[f'btagSF{flavour}{corr}'] = {
+            'name': f'CMS_btagSF{flavour}_{corr}',   # or CMS_btagSF{flavour}_{year}
+            'kind': 'weight', 'type': 'shape',
+            'samples': { skey: [f'btagSF{flavour}_up_{corr}/btagSF{flavour}',
+                                 f'btagSF{flavour}_down_{corr}/btagSF{flavour}'] for skey in mc }
+        }
+```
+
+This yields 4 nuisance parameters per epoch:
+- `CMS_btagSFbc_correlated` — b/c-jet SF uncertainty correlated across all years
+- `CMS_btagSFbc_2022` — b/c-jet SF uncertainty decorrelated per year (Run3 2022)
+- `CMS_btagSFlight_correlated` — light-jet SF uncertainty correlated across all years
+- `CMS_btagSFlight_2022` — light-jet SF uncertainty decorrelated per year (Run3 2022)
+
+**Source:** [`mkShapesRDF/processor/data/scale_factors_BTV/`](https://github.com/latinos/mkShapesRDF/tree/Run3/mkShapesRDF/processor/data/scale_factors_BTV), `ControlRegions/3l/2022_v12/macros/evaluate_btagSFbc.cc`, `evaluate_btagSFlight.cc`
+
+**Status in ZpTreweighting:** The b-tagging SF aliases (`bVetoSF`, `bReqSF`, `btagSF`) are **commented out** in `aliases.py`, and the b-tagging nuisances are **not in `nuisances.py`**. This is consistent with the DY control region configuration. For the 0-jet category used in ZpTreweighting, the effect is small, but if b-enriched categories or a full Run3 HWW-style analysis is performed with this configuration, the fixed-WP `btagSFbc`/`btagSFlight` approach should be adopted.
+
+---
+
+### 5.8 Jet Pileup ID Scale Factor (`jetPUID`, `Jet_PUIDSF`)
+
+**What it is:** A weight that corrects the efficiency of the CMS Pileup Jet ID (PUID) discriminant, which distinguishes genuine hard-scatter jets from fake jets created by pileup collisions. The SF is:
+
+```
+Jet_PUIDSF = ε_PUJET(data) / ε_PUJET(MC)
+```
+
+**How it is applied:** Event-level weight, computed as the product of per-jet PUIDSF:
+
+```python
+# Alias (WH_chargeAsymmetry and VBF-type analyses):
+aliases['Jet_PUIDSF'] = {
+    'expr': 'TMath::Exp(Sum((Jet_jetId>=2)*LogVec(Jet_PUIDSF_loose)))',
+    'samples': mc
+}
+# Variations:
+aliases['Jet_PUIDSF_up']   = { 'expr': 'TMath::Exp(Sum((Jet_jetId>=2)*LogVec(Jet_PUIDSF_loose_up)))', ... }
+aliases['Jet_PUIDSF_down'] = { 'expr': 'TMath::Exp(Sum((Jet_jetId>=2)*LogVec(Jet_PUIDSF_loose_down)))', ... }
+
+# Nuisance:
+puid_syst = ['Jet_PUIDSF_up/Jet_PUIDSF', 'Jet_PUIDSF_down/Jet_PUIDSF']
+nuisances['jetPUID'] = {
+    'name': 'CMS_PUID_{year}',
+    'kind': 'weight', 'type': 'shape',
+    'samples': dict((skey, puid_syst) for skey in mc)
+}
+```
+
+**Why needed:** Pileup jets have different shower and track characteristics from hard-scatter jets. PUJET ID suppresses them, but the efficiency differs between data and MC, requiring a correction. This is most important in analyses with many jets or VBF-like topologies.
+
+**Run3 status:** In the Run3 framework (`NanoAODv12`), the Pileup Jet ID is not typically applied in the 0-jet / low-jet-multiplicity regime. It appears primarily in VBF, VBS, and WH analyses where forward jet identification is critical.
+
+**Example configuration:** `VBF_differential/Full2017_v9/nuisances.py`, `VBS_OS_pol/Full2016noHIPM_v9/nuisances.py`, `WH_chargeAsymmetry/UL/Full2017_v9/WH3l/aliases.py`
+
+**Status in ZpTreweighting:** **Not needed.** ZpTreweighting uses the 0-jet category and does not require PUJET ID.
+
+---
+
+### 5.9 Summary Table: All Jet Scale Factors
+
+| Scale Factor | Key in nuisances | CMS name | Kind | Type | Applied to | Status in ZpTreweighting |
+|-------------|-----------------|----------|------|------|------------|--------------------------|
+| **JES** (total, single source) | `JES` | `CMS_scale_j_2022` | suffix | shape | all MC jets | ❌ Not in nuisances.py |
+| **JES** (split, 11 sources) | `Absolute`, `Absolute_2022`, `FlavorQCD`, `BBEC1`, `BBEC1_2022`, `EC2`, `EC2_2022`, `HF`, `HF_2022`, `RelativeBal`, `RelativeSample_2022` | `CMS_scale_j_{source}` | suffix | shape | all MC jets | ❌ Not in nuisances.py |
+| **JER** (single) | `JER` | `CMS_res_j_2022` | suffix | shape | all MC jets | ❌ Not in nuisances.py |
+| **JER** (split, 6 η bins) | `JER_0`–`JER_5` | `CMS_res_JER_{n}_j` | suffix | shape | all MC jets | ❌ Not in nuisances.py |
+| **MET unclustered energy** | `MET` | `CMS_scale_met_2022` | suffix | shape | all MC | ❌ Not in nuisances.py |
+| **Jet veto map** | — (mask, not a weight) | — | mask | — | data+MC jets | ✅ Applied in pre-processing |
+| **Jet horn veto** | — (selection cut) | — | cut | — | all | ⚠️ Defined but replaced by zeroJet |
+| **b-tag SF (shape, deepjet)** | `bVetoSF`, `bReqSF`, `btagSF` | — (deprecated in Run3) | weight | shape | all MC jets | ❌ Commented out |
+| **b-tag SF (fixed-WP, bc)** | `btagSFbc` | `CMS_btagSFbc_correlated` / `CMS_btagSFbc_2022` | weight | — | all MC jets | ❌ Not implemented |
+| **b-tag SF (fixed-WP, light)** | `btagSFlight` | `CMS_btagSFlight_correlated` / `CMS_btagSFlight_2022` | weight | — | all MC jets | ❌ Not implemented |
+| **b-tag SF bc nuisance (corr.)** | `btagSFbccorrelated` | `CMS_btagSFbc_correlated` | weight | shape | all MC | ❌ Not in nuisances.py |
+| **b-tag SF bc nuisance (uncorr.)** | `btagSFbcuncorrelated` | `CMS_btagSFbc_2022` | weight | shape | all MC | ❌ Not in nuisances.py |
+| **b-tag SF light nuisance (corr.)** | `btagSFlightcorrelated` | `CMS_btagSFlight_correlated` | weight | shape | all MC | ❌ Not in nuisances.py |
+| **b-tag SF light nuisance (uncorr.)** | `btagSFlightuncorrelated` | `CMS_btagSFlight_2022` | weight | shape | all MC | ❌ Not in nuisances.py |
+| **Pileup Jet ID SF** | `jetPUID` | `CMS_PUID_{year}` | weight | shape | MC jets (pT<50) | ➖ Not needed for 0-jet ZpTrw |
+
+**Legend:** ✅ Applied, ❌ Not applied (but potentially relevant), ⚠️ Partially applied, ➖ Not applicable
+
+---
+
+### 5.10 Recommendation for ZpTreweighting
+
+Given that ZpTreweighting is focused on deriving the Z pT reweighting function using the 0-jet category, the most relevant jet SFs to add are:
+
+1. **JER** (`CMS_res_j_2022`): The JER affects the efficiency of the 0-jet veto (`zeroJet = Alt(CleanJet_pt, 0, 0) < 30`) by smearing jets near the 30 GeV threshold. This is directly relevant.
+2. **JES** (at least the total or the 11-source split): JES shifts change the jet pT threshold, affecting the 0-jet efficiency similarly to JER.
+3. **MET unclustered energy** (`CMS_scale_met_2022`): Less critical for ZpTreweighting (no MET cut), but propagates to pTll via the hadronic recoil in some variables.
+4. **b-tag SF (fixed-WP)**: Relevant only if b-enriched control regions are used for background subtraction (currently not). Can remain commented out.
+
+Example nuisances to add to `ZpTreweighting/nuisances.py` (following `HWW/ggH_SF/2022/nuisances.py`):
+```python
+nuisances['JER'] = {
+    'name': 'CMS_res_j_2022', 'skipCMS': 1,
+    'kind': 'suffix', 'type': 'shape',
+    'mapUp': 'jerup', 'mapDown': 'jerdo',
+    'samples': dict((skey, ['1', '1']) for skey in mc),
+    'folderUp': makeMCDirectory('jerup_suffix'),
+    'folderDown': makeMCDirectory('jerdo_suffix'),
+    'AsLnN': '0'
+}
+nuisances['JES'] = {
+    'name': 'CMS_scale_j_2022', 'skipCMS': 1,
+    'kind': 'suffix', 'type': 'shape',
+    'mapUp': 'jesTotalup', 'mapDown': 'jesTotaldo',
+    'samples': dict((skey, ['1', '1']) for skey in mc),
+    'folderUp': makeMCDirectory('jesTotalup_suffix'),
+    'folderDown': makeMCDirectory('jesTotaldo_suffix'),
+    'AsLnN': '0'
+}
+```
