@@ -15,9 +15,32 @@ plt.style.use(style)
 
 parser = argparse.ArgumentParser(description='Extract data and fit with Gaussian.')
 parser.add_argument('-f', action='store_true', help='Fit the ratio plot using Erf.')
+parser.add_argument(
+    '-i', '--input',
+    default='mkShapes__ZpTreweighting.root',
+    metavar='FILE',
+    help='Path to the merged ROOT file (default: mkShapes__ZpTreweighting.root)',
+)
+parser.add_argument(
+    '--write-dyzptrw',
+    default=None,
+    metavar='PATH',
+    help='If given, write the updated dyZpTrw.py to this path after a successful fit '
+         '(requires -f). The file is overwritten.',
+)
+parser.add_argument(
+    '--year',
+    default='2022',
+    help="Year key in the DYrew dict written to dyZpTrw.py (default: '2022')",
+)
+parser.add_argument(
+    '--sample-type',
+    default='LO',
+    help="Sample-type key in the DYrew dict written to dyZpTrw.py (default: 'LO')",
+)
 args = parser.parse_args()
 
-root_file = ROOT.TFile("mkShapes__ZpTreweighting.root")
+root_file = ROOT.TFile(args.input)
 # root_file = ROOT.TFile("mkShapes__beforeZpTreweighting_highLepPtThreshold_30_18.root")
 zee_dir = root_file.Get("Zmm_0j")
 ptll_dir = zee_dir.Get("ptll")
@@ -208,7 +231,7 @@ for fitfunc, initguess, savename in zip(fitting_functions, initial_guesses, save
             params = [fit_func.GetParameter(i) for i in range(n_params)]
             # Replace [i] with parameter values
             for i, p in enumerate(params):
-                formula = formula.replace(f"[{i}]", f"{p:.3f}")
+                formula = formula.replace(f"[{i}]", f"{p:.6f}")
             print(f"Fit function with parameters: {formula}")
 
     c_ratio_only.SaveAs(f"ZpTreweighting_ratio_fit_{savename}.pdf")
@@ -216,3 +239,44 @@ for fitfunc, initguess, savename in zip(fitting_functions, initial_guesses, save
 print(f"Integral of DY histogram from 0 to 50 GeV: {integral_histo_DY}")
 print(f"Integral of ratio histogram from 0 to 50 GeV: {integral_histo_ratio}")
 print(f"Normalization factor = {norm_factor}")
+
+# ---------------------------------------------------------------------------
+# Write updated dyZpTrw.py (only when --write-dyzptrw and -f are both given)
+# ---------------------------------------------------------------------------
+if args.write_dyzptrw and args.f:
+    wrote = False
+    # 'fit_func', 'fit_result', 'fitfunc' are in scope from the last for-loop
+    # iteration (Python loop variables persist after the loop).
+    try:
+        if fit_result and fit_result.IsValid():
+            # Build a ROOT / C++ compatible formula string with full precision.
+            root_formula = fitfunc  # e.g. "[0]*([1]*TMath::Erf(...) + [4]*x + [5]*x**2 + [6])"
+            n_params = fit_func.GetNpar()
+            params = [fit_func.GetParameter(i) for i in range(n_params)]
+            for i, p in enumerate(params):
+                root_formula = root_formula.replace(f"[{i}]", f"{p:.6f}")
+            # Convert Python-style x**2 to ROOT / C++ TMath::Sq(x)
+            root_formula = root_formula.replace("x**2", "TMath::Sq(x)")
+            # Tidy up double signs that can appear after parameter substitution
+            root_formula = root_formula.replace("+ -", "- ")
+            root_formula = root_formula.replace("- -", "+ ")
+            # Prepend the integral normalization factor
+            full_expr = f"{norm_factor}*{root_formula}"
+
+            dy_content = (
+                "DYrew={\n"
+                f"    '{args.year}': {{\n"
+                f"        '{args.sample_type}': \"{full_expr}\"\n"
+                "    }\n"
+                "}\n"
+            )
+            with open(args.write_dyzptrw, "w") as _f:
+                _f.write(dy_content)
+            print(f"\nWrote updated dyZpTrw.py → {args.write_dyzptrw}")
+            print(f"  Expression: {full_expr}")
+            wrote = True
+        else:
+            print("\nWARNING: Fit did not converge; dyZpTrw.py was NOT updated.")
+    except NameError:
+        print("\nWARNING: No fit results in scope (was -f passed?). "
+              "dyZpTrw.py was NOT updated.")
