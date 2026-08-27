@@ -2,6 +2,7 @@ mc = [skey for skey in samples if skey not in ('Fake', 'DATA')]
 redirector = ""
 useXROOTD = False
 
+print(treeBaseDir)
 def makeMCDirectory(var=''):
     _treeBaseDir = treeBaseDir + ''
     if useXROOTD:
@@ -10,6 +11,13 @@ def makeMCDirectory(var=''):
         return '/'.join([_treeBaseDir, mcProduction, mcSteps])
     else:
         return '/'.join([_treeBaseDir, mcProduction, mcSteps + '__' + var])
+
+
+
+mcDirectory = makeMCDirectory()
+#fakeDirectory = os.path.join(treeBaseDir, dataReco, fakeSteps)
+#dataDirectory = os.path.join(treeBaseDir, dataReco, dataSteps)
+print(treeBaseDir)
 
 # merge cuts
 _mergedCuts = []
@@ -23,12 +31,16 @@ for cut in list(cuts.keys()):
         _mergedCuts.append(cut)
 
 
+# Dfinitions of groups of samples
 cuts2j = _mergedCuts
 
 nuisances = {}
 
+
+################################ EXPERIMENTAL UNCERTAINTIES  #################################
+
 nuisances['JER'] = {
-    'name': 'CMS_res_j_2022',
+    'name': 'CMS_res_j_2024',
     'skipCMS' : 1,
     'kind': 'suffix',
     'type': 'shape',
@@ -41,7 +53,8 @@ nuisances['JER'] = {
     'AsLnN': '0'
 }
 
-jes_systs    = ["Absolute", "Absolute_2022", "FlavorQCD", "BBEC1", "EC2", "HF", "BBEC1_2022", "EC2_2022", "RelativeBal", "RelativeSample_2022", "HF_2022"] # Reduced set of 11 uncertainties
+jes_systs    = ["Absolute", "Absolute_2024", "FlavorQCD", "BBEC1", "EC2", "HF", "BBEC1_2024", "EC2_2024", "RelativeBal", "RelativeSample_2024", "HF_2024"] # Reduced set of 11 uncertainties
+#jes_systs = ['jesTotal']
 
 for js in jes_systs:
     
@@ -59,7 +72,7 @@ for js in jes_systs:
     }
 
 nuisances['MET'] = {
-    'name': 'CMS_scale_met_2022',
+    'name': 'CMS_scale_met_2024',
     'skipCMS' : 1,
     'kind': 'suffix',
     'type': 'shape',
@@ -74,7 +87,7 @@ nuisances['MET'] = {
 
 ##### Lepton scale
 nuisances['lepscale'] = {
-    'name': 'CMS_lepscale_2022',
+    'name': 'CMS_lepscale_2024',
     'skipCMS' : 1,
     'kind': 'suffix',
     'type': 'shape',
@@ -88,7 +101,7 @@ nuisances['lepscale'] = {
 }
 ##### Lepton resolution
 nuisances['lepres'] = {
-    'name': 'CMS_lepres_2022',
+    'name': 'CMS_lepres_2024',
     'skipCMS' : 1,
     'kind': 'suffix',
     'type': 'shape',
@@ -109,7 +122,7 @@ for flavour in ['bc', 'light']:
         if corr == 'correlated':
             name = f'CMS_btagSF{flavour}_{corr}'
         else:
-            name = f'CMS_btagSF{flavour}_2022'
+            name = f'CMS_btagSF{flavour}_2024'
         nuisances[f'btagSF{flavour}{corr}'] = {
             'name': name,
             'skipCMS' : 1,
@@ -124,7 +137,7 @@ for flavour in ['bc', 'light']:
 trig_syst = ['TriggerSFWeight_2l_u/TriggerSFWeight_2l', 'TriggerSFWeight_2l_d/TriggerSFWeight_2l']
 
 nuisances['trigg'] = {
-    'name': 'CMS_eff_hwwtrigger_2022',
+    'name': 'CMS_eff_hwwtrigger_2024',
     'kind': 'weight',
     'type': 'shape',
     'samples': dict((skey, trig_syst) for skey in mc)
@@ -133,16 +146,16 @@ nuisances['trigg'] = {
 ##### Electron Efficiency and energy scale
 
 nuisances['eff_e'] = {
-    'name': 'CMS_eff_e_2022',
+    'name': 'CMS_eff_e_2024',
     'kind': 'weight',
     'type': 'shape',
-    'samples': dict((skey, ['SFweightEleUp', 'SFweightEleDown']) for skey in mc), 
+    'samples': dict((skey, ['SFweightEleUp', 'SFweightEleDown']) for skey in mc), # IN THIS SAMPLES THERE'S AN ERROR AND SFUP AND SFDO ARE THE SAME, NEEDS TO BE FIXED
 }
 
 ##### Muon Efficiency and energy scale
 
 nuisances['eff_m'] = {
-    'name': 'CMS_eff_m_2022',
+    'name': 'CMS_eff_m_2024',
     'kind': 'weight',
     'type': 'shape',
     'samples': dict((skey, ['SFweightMuUp', 'SFweightMuDown']) for skey in mc),
@@ -150,7 +163,7 @@ nuisances['eff_m'] = {
 
 
 nuisances['PU'] = {
-    'name'    : 'CMS_pileup_2022',
+    'name'    : 'CMS_pileup_2024',
     'type'    : 'lnN',
     'samples' : dict((skey, '1.05') for skey in mc),
 }
@@ -195,7 +208,7 @@ nuisances['QCDscale_DY'] = {
     'samples': {'DY': ['Alt(LHEScaleWeight,0, 1.)', 'Alt(LHEScaleWeight,nLHEScaleWeight-1,1)']}
 }
 
-# Seems like GluGlutoContintoWWtoENuENu has LHEScaleWeight[0]/D, so removing this nuisance for now.
+# Seems like this nuisance is causing errors, so removing this nuisance for now. (DS, 26Aug26)
 # nuisances['QCDscale_VV'] = {
 #     'name' : 'QCDscale_VV',
 #     'kind' : 'weight',
@@ -233,13 +246,13 @@ nuisances['fake_syst'] = {
 }
 
 #### Luminosity
-# https://twiki.cern.ch/twiki/bin/view/CMS/LumiRecommendationsRun3
-nuisances['lumi_2022'] = {
-    'name'    : 'lumi_2022',
-    'type'    : 'lnN',
-    'samples' : dict((skey, '1.014') for skey in mc)
-}
 
+# https://twiki.cern.ch/twiki/bin/view/CMS/LumiRecommendationsRun3
+nuisances['lumi_2024'] = {
+    'name'    : 'lumi_2024',
+    'type'    : 'lnN',
+    'samples' : dict((skey, '1.016') for skey in mc)
+}
 
 autoStats = True
 if autoStats:

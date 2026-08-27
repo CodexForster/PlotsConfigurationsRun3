@@ -215,12 +215,6 @@ plot['SMhiggs'] = {
 #     'scale'    : 1.0,
 # }
 
-# groupPlot['background']  = {  
-#     'nameHR'   : 'background',
-#     'isSignal' : 0,
-#     'color'    : 851, # kAzure -9 
-#     'samples'  : ['top', 'diboson', 'SMhiggs']
-# }
 
 # data
 
@@ -235,6 +229,5 @@ plot['DATA']  = {
 
 # Legend definition
 legend = {}
-legend['lumi'] = 'L =  8.0 fb^{-1}'
-legend['sqrt'] = '#sqrt{s} = 13.6 TeV'
-
+legend['lumi'] = 'L =  109.08 fb^{-1}'
+legend['sqrt'] = '13.6 TeV'

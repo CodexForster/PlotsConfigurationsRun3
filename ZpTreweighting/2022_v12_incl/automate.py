@@ -427,7 +427,7 @@ def update_aliases_dyrew_key(aliases_file, year, sample_type, dry_run=False):
 
     # Match DYrew['oldyear']['oldtype_jetbin'] or DYrew["oldyear"]["oldtype_jetbin"]
     pattern = re.compile(
-        r"""DYrew\[\s*(['"])[^'"]+\1\s*\]\[\s*(['"])[^'"]+_(0j|1j|2j)\2\s*\]"""
+        r"""DYrew\[\s*(['"])[^'"]+\1\s*\]\[\s*(['"])[^'"]+_(0j)\2\s*\]"""
     )
 
     def replacer(match):
@@ -501,7 +501,7 @@ def phase2_extract(zptrw_dir, cfg, year="2022_v12", sample_type="LO", run_fit = 
             f"  {merged_file}\n"
             f"Run 'mkShapesRDF -o 2 -f .' in {zptrw_dir} first."
         )
-    for njet in [0, 1, 2]:
+    for njet in [0]:
         # derive weights in Z->MuMu channel, 0 jet bin
         if run_fit == "-f":
             # define normalization when fitting is requested, else, just plot

@@ -24,7 +24,7 @@ cuts['Zee']  = {
       '0j' : 'zeroJet',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
@@ -34,7 +34,7 @@ cuts['Zmm']  = {
       '0j' : 'zeroJet',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
@@ -44,7 +44,7 @@ cuts['Zee_noJetInHorn']  = {
       '0j' : 'zeroJet',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
@@ -54,6 +54,6 @@ cuts['Zmm_noJetInHorn']  = {
       '0j' : 'zeroJet',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }

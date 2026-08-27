@@ -21,39 +21,39 @@ preselections = 'Lepton_pt[0] > 25 \
 cuts['Zee']  = {
    'expr' : '(Lepton_pdgId[0] * Lepton_pdgId[1] == -11*11)',
    'categories' : {
-      '0j' : 'zeroJet',
+      '0j' : '1',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
 cuts['Zmm']  = {
    'expr' : '(Lepton_pdgId[0] * Lepton_pdgId[1] == -13*13)',
    'categories' : {
-      '0j' : 'zeroJet',
+      '0j' : '1',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
 cuts['Zee_noJetInHorn']  = {
    'expr' : '(Lepton_pdgId[0] * Lepton_pdgId[1] == -11*11) && noJetInHorn',
    'categories' : {
-      '0j' : 'zeroJet',
+      '0j' : '1',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }
 
 cuts['Zmm_noJetInHorn']  = {
    'expr' : '(Lepton_pdgId[0] * Lepton_pdgId[1] == -13*13) && noJetInHorn',
    'categories' : {
-      '0j' : 'zeroJet',
+      '0j' : '1',
       '1j' : 'oneJet && Alt(CleanJet_pt,1,0)<30',
       '2j' : 'multiJet',
-      'incl' : '1',
+      # 'inc' : '1'
    }
 }

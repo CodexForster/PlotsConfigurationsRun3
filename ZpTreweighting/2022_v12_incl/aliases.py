@@ -158,9 +158,9 @@ _dyzptrw_json = os.path.join(os.path.dirname(configurations), 'dyZpTrw.json')
 with open(_dyzptrw_json) as _fj:
     DYrew = json.load(_fj)
 aliases['DY_NLO_ZpTrw'] = {
-    'expr': '(' + DYrew['2022_v12']['LO_0j'].replace('x', 'gen_Zpt') + ')*(zeroJet)' +
-            ' + (' + DYrew['2022_v12']['LO_1j'].replace('x', 'gen_Zpt') + ')*(oneJet&& Alt(CleanJet_pt,1,0)<30)' +
-            ' + (' + DYrew['2022_v12']['LO_2j'].replace('x', 'gen_Zpt') + ')*(multiJet)',
+    'expr': '(' + DYrew['2022_v12']['LO_0j'].replace('x', 'gen_Zpt') + ')',
+            # ' + (' + DYrew['2022_v12']['LO_1j'].replace('x', 'gen_Zpt') + ')*(oneJet&& Alt(CleanJet_pt,1,0)<30)' +
+            # ' + (' + DYrew['2022_v12']['LO_2j'].replace('x', 'gen_Zpt') + ')*(multiJet)',
     'samples': ['DY']
 }
 

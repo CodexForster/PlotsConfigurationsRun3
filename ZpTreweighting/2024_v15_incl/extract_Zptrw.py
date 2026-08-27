@@ -44,6 +44,7 @@ histo_Zg = ptll_dir.Get("histo_Zg")
 histo_ZgS = ptll_dir.Get("histo_ZgS")
 histo_Wg = ptll_dir.Get("histo_Wg")
 histo_WgS = ptll_dir.Get("histo_WgS")
+histo_VVV = ptll_dir.Get("histo_VVV")
 histo_SMhiggs = ptll_dir.Get("histo_SMhiggs")
 
 # Subtract DY backgrounds from DATA
@@ -57,6 +58,7 @@ histo_trueData.Add(histo_Zg, -1)
 histo_trueData.Add(histo_ZgS, -1)
 histo_trueData.Add(histo_Wg, -1)
 histo_trueData.Add(histo_WgS, -1)
+histo_trueData.Add(histo_VVV, -1)
 histo_trueData.Add(histo_SMhiggs, -1)
 
 plot_range = [0, args.plot_xrange]

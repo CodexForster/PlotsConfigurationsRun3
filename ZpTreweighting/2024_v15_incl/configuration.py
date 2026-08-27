@@ -19,7 +19,8 @@ batchFolder = "condor"
 configsFolder = "configs"
 
 # luminosity to normalize to (in 1/fb) https://twiki.cern.ch/twiki/bin/viewauth/CMS/PdmVRun3Analysis
-lumi = 8.0
+lumi = 109.08
+
 
 # file with dict of aliases to define
 aliasesFile = "aliases.py"
