@@ -1,0 +1,6 @@
+configs/
+condor/
+plots_*/
+*.so
+*.d
+*.pcm
