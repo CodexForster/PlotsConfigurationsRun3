@@ -1,47 +1,60 @@
-import uproot
-import pandas as pd
 import numpy as np
+import pandas as pd
+import uproot
 
-root_path = "/afs/cern.ch/user/s/squinto/private/work/PlotsConfigurationRun3/HWW/VBF_DF/2024/rootFiles/HWW/VBF/2024/rootFiles__VBF_DF_2024v15_DBNN_DF/mkShapes__VBF_DF_2024v15_DBNN_DF.root"
+root_path = "/afs/cern.ch/user/s/squinto/private/work/PlotsConfigurationRun3/HWW/VBF_DF/2024/rootFiles/HWW/VBF/2024/rootFiles__VBF_DF_2024v15_df_for_combination_1607/mkShapes__VBF_DF_2024v15_df_for_combination_1607.root"
 tree_path = "trees/hww_sr_inc/"
-output_path = "/eos/user/s/squinto/SWAN_projects/ML/df2024VBF_dbnn_all_events.pkl.gz"
+output_path = (
+    "/eos/user/s/squinto/SWAN_projects/ML/2024_df_for_combination_1607.pkl.gz"
+)
 
 label_map = {
     "ggH": "is_ggH",
     "qqH": "is_qqH",
     "top": "is_top",
-    "WW":  "is_WW",
+    "WW": "is_WW",
+    "ggWW": "is_ggWW",
 }
 label_columns = list(label_map.values())
 
+# Define active systematic versions here
+#active_versions = ["nom", "absolute_up", "absolute_down"]
+active_versions = ['nom', 'absolute_up', 'absolute_down', 'relativebal_up', 'relativebal_down', "jer_up", "jer_down"]#, "bbec1_up", "bbec1_down", "hf_up", "hf_down", "absolute2024_up", "absolute2024_down"]
+
+# Master mapping of suffixes (defined for all potential versions)
 suffixes = {
-    "relsample_up": "_relsample_up",
-    "relsample_down": "_relsample_down",
-    "jer_up": "_jer_up",
-    "jer_down": "_jer_down",
     "absolute_up": "_absolute_up",
     "absolute_down": "_absolute_down",
-    "flavor_up": "_flavor_up",
-    "flavor_down": "_flavor_down",
-    "lepres_up": "_lepres_up",
-    "lepres_down": "_lepres_down"
+    "relativebal_up": "_relativebal_up",
+    "relativebal_down": "_relativebal_down",
+    "jer_up": "_jer_up",
+    "jer_down": "_jer_down",
+    "bbec1_up": "_bbec1_up",
+    "bbec1_down": "_bbec1_down",
+    "hf_up": "_hf_up",
+    "hf_down": "_hf_down",
+    "absolute2024_up": "_absolute2024_up",
+    "absolute2024_down": "_absolute2024_down",
 }
 
-processes = ['top/Events;1', 'WW/Events;1', 'ggH_hww/Events;1', 'qqH_hww/Events;1']
+# Filter active suffixes based strictly on active_versions
+active_suffixes = [
+    suffixes[v] for v in active_versions if v in suffixes
+]  # excludes 'nom'
+
+processes = [
+    "top/Events;1",
+    "top/Events;2",
+    #"WW/Events;1",  
+    "WW/Events;3",
+    "WW/Events;4",
+    "ggWW/Events;1",
+    "ggWW/Events;2",
+    "ggH_hww/Events;1",
+    "qqH_hww/Events;1",
+]
 
 file = uproot.open(root_path)
-
-
-counts = {}
-for proc in processes:
-    tree = file[tree_path + proc]
-    counts[proc] = tree.num_entries
-
-min_events = max(counts.values())
-print(f"Conteggi per sample: {counts}")
-print(f"--> Bilanciamento su: {min_events} eventi per sample\n")
-
-
 dfs = []
 
 for proc in processes:
@@ -49,20 +62,34 @@ for proc in processes:
     tree = file[tree_path + proc]
     all_branches = tree.keys()
 
-    base_variables = [v for v in all_branches if not any(v.endswith(s) for s in suffixes.values())]
-    
-    branches_to_read = [v for v in all_branches if any(v.startswith(b) for b in base_variables)]
+    # Identify base variables (exclude ANY suffix pattern known in master dict)
+    all_known_suffixes = list(suffixes.values())
+    base_variables = [
+        v
+        for v in all_branches
+        if not any(v.endswith(s) for s in all_known_suffixes)
+    ]
+
+    # FIX 1: Read ONLY base variables + active systematic variations
+    branches_to_read = []
+    for b in all_branches:
+        if b in base_variables:
+            branches_to_read.append(b)
+        elif any(b.endswith(s) for s in active_suffixes):
+            # Only keep if the stem is one of our base variables
+            if any(b == f"{base_var}{s}" for base_var in base_variables for s in active_suffixes):
+                branches_to_read.append(b)
+
     data = tree.arrays(branches_to_read, library="np")
+    df_balanced = pd.DataFrame(
+        {k: data[k].reshape(-1) for k in branches_to_read}
+    )
 
-    df_temp_all = pd.DataFrame({k: data[k].reshape(-1) for k in branches_to_read})
-
-    df_balanced = df_temp_all
-
-    for version in ['nom', 'relsample_up', 'relsample_down', 'jer_up', 'jer_down', 'absolute_up', 'absolute_down', 'flavor_up', 'flavor_down', 'lepres_up', 'lepres_down']:
+    for version in active_versions:
         block_dict = {}
-        
+
         for var in base_variables:
-            if version == 'nom':
+            if version == "nom":
                 block_dict[var] = df_balanced[var]
             else:
                 var_variant = var + suffixes[version]
@@ -70,24 +97,14 @@ for proc in processes:
                     block_dict[var] = df_balanced[var_variant]
                 else:
                     block_dict[var] = df_balanced[var]
-        
+
         df_version = pd.DataFrame(block_dict)
 
-        # Flag variazione
-        df_version['is_nom'] = 1 if version == 'nom' else 0
-        df_version['is_relsample_up'] = 1 if version == 'relsample_up' else 0
-        df_version['is_relsample_down'] = 1 if version == 'relsample_down' else 0
-        df_version['is_jer_up'] = 1 if version == 'jer_up' else 0
-        df_version['is_jer_down'] = 1 if version == 'jer_down' else 0
-        df_version['is_absolute_up'] = 1 if version == 'absolute_up' else 0
-        df_version['is_absolute_down'] = 1 if version == 'absolute_down' else 0
-        df_version['is_flavor_up'] = 1 if version == 'flavor_up' else 0
-        df_version['is_flavor_down'] = 1 if version == 'flavor_down' else 0
-        df_version['is_lepres_up'] = 1 if version == 'lepres_up' else 0
-        df_version['is_lepres_down'] = 1 if version == 'lepres_down' else 0
+        # FIX 2: Dynamic variation flags for all active versions
+        for v in active_versions:
+            df_version[f"is_{v}"] = 1 if version == v else 0
 
-
-        # Flag processo
+        # Process flags
         for col in label_columns:
             df_version[col] = 0
         for key, label in label_map.items():
@@ -100,11 +117,23 @@ if not dfs:
     raise RuntimeError("No data to concatenate")
 
 df_final = pd.concat(dfs, ignore_index=True)
+df_final = df_final.drop_duplicates()
+
+df_final = df_final[
+    (df_final["mth"] > 60)
+    & (df_final["mth"] < 125)
+    & (df_final["mtw2"] > 30)
+    & (df_final["jetpt1"] > 30)
+    & (df_final["jetpt2"] > 30)
+    & (df_final["puppimet"] > 20)
+    & (df_final["ptll"] > 30)
+    & (df_final["mjj"] > 120)
+]
 
 print("\n--- Statistiche Finali ---")
 print(f"Shape totale: {df_final.shape}")
 print("Colonne finali:" + str(df_final.columns.tolist()))
-print("Distribuzione per processo (considerando Nom+Up+Down):")
+print("Distribuzione per processo:")
 for col in label_columns:
     print(f"  {col}: {df_final[df_final[col] == 1].shape[0]}")
 

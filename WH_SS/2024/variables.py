@@ -91,7 +91,21 @@ variables['eta3']  = {
     'xaxis' : '#eta 3rd lep',
     'fold'  : 3                         
 }
-                        
+
+variables['pt_leading_electron'] = {
+    'name': 'Alt(Lepton_pt[abs(Lepton_pdgId)==11], 0, -99)',
+    'range': (40, 0, 200),
+    'xaxis': 'p_{T} leading electron [GeV]',
+    'fold': 3
+}
+
+variables['pt_leading_muon'] = {
+    'name': 'Alt(Lepton_pt[abs(Lepton_pdgId)==13], 0, -99)',
+    'range': (40, 0, 200),
+    'xaxis': 'p_{T} leading muon [GeV]',
+    'fold': 3
+}
+
 variables['puppimet']  = {
     'name': 'PuppiMET_pt',
     'range' : (20,0,200),

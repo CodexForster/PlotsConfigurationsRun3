@@ -2,11 +2,22 @@ import os
 import copy
 import inspect
 
-configurations = os.path.realpath(inspect.getfile(inspect.currentframe())) # this file
-configurations = os.path.dirname(configurations) # 2024
-configurations = os.path.dirname(configurations) # WH_SS
-configurations = os.path.dirname(configurations) # PlotsConfigurationsRun3
-print(configurations)
+# configurations = os.path.realpath(inspect.getfile(inspect.currentframe())) # this file
+# configurations = os.path.dirname(configurations) # 2024
+# configurations = os.path.dirname(configurations) # WH_SS
+# configurations = os.path.dirname(configurations) # PlotsConfigurationsRun3
+# print(configurations)
+
+ROOT.gSystem.Load("libGpad.so")
+ROOT.gSystem.Load("libGraf.so")
+
+configurations = os.path.realpath(inspect.getfile(inspect.currentframe()))
+macros = os.path.dirname(configurations) + '/macros/'
+fakerates = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(configurations)))) + '/utils/data/FakeRate'
+btagmaps = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(configurations)))) + '/utils/data/btag'
+print(macros)
+print(fakerates)
+print(btagmaps)
 
 aliases = {}
 aliases = OrderedDict()
@@ -15,10 +26,17 @@ mc     = [skey for skey in samples if skey not in ('Fake', 'DATA', 'Dyemb', 'DAT
 
 # LepCut3l__ele_wp90iso__mu_cut_TightID_POG
 
-eleWP = 'cutBased_LooseID_tthMVA_Run3'
-# eleWP = 'wp90iso'
-muWP  = 'cut_TightID_pfIsoTight_HWW_tthmva_67'
-# muWP  = 'cut_TightID_POG'
+# eleWP = 'cutBased_LooseID_tthMVA_Run3'
+# # eleWP = 'wp90iso'
+# muWP  = 'cut_TightID_pfIsoTight_HWW_tthmva_67'
+# # muWP  = 'cut_TightID_POG'
+
+# eleWP = 'cutBased_MediumID_tthMVA_HWW'
+# muWP  = 'cut_TightID_pfIsoLoose_HWW_tthmva_HWW'
+
+eleWP = 'cutBased_MediumID_tthMVA_Run3'
+muWP  = 'cut_TightID_pfIsoLoose_HWW_tthmva_67'
+
 
 aliases['LepWPCut'] = {
     'expr': 'LepCut2l__ele_'+eleWP+'__mu_'+muWP,
@@ -30,9 +48,23 @@ aliases['LepWPSF'] = {
     'samples': mc
 }
 
+
+aliases['fakeW'] = {
+    'linesToAdd'     : [f'#include "{macros}fake_rate_reader_class.cc"'],
+    'linesToProcess' : [f"ROOT.gInterpreter.ProcessLine('fake_rate_reader fr_reader = fake_rate_reader(\"{eleWP}\", \"{muWP}\", \"nominal\", 2, \"std\", \"{fakerates}\", \"2023_v12_pt\");')"],
+    'expr'           : f'fr_reader(Lepton_pdgId, Lepton_pt, Lepton_eta, Lepton_isTightMuon_{muWP}, Lepton_isTightElectron_{eleWP}, Lepton_muonIdx, CleanJet_pt, nCleanJet)',
+    'samples'        : ['Fake']
+}
+
+
 # gen-matching to prompt only (GenLepMatch2l matches to *any* gen lepton)
 aliases['PromptGenLepMatch2l'] = {
     'expr': 'Alt(Lepton_promptgenmatched, 0, 0) * Alt(Lepton_promptgenmatched, 1, 0)',
+    'samples': mc
+}
+
+aliases['PromptGenLepMatch3l'] = {
+    'expr': 'Alt(Lepton_promptgenmatched, 0, 0) * Alt(Lepton_promptgenmatched, 1, 0) * Alt(Lepton_promptgenmatched, 2, 0)',
     'samples': mc
 }
 
@@ -54,6 +86,20 @@ aliases['multiJet'] = {
 
 aliases['noJetInHorn'] = {
     'expr' : 'Sum(CleanJet_pt > 30 && CleanJet_pt < 50 && abs(CleanJet_eta) > 2.6 && abs(CleanJet_eta) < 3.1) == 0',
+}
+
+aliases['Top_pTrw'] = {
+    'expr': '(topGenPt * antitopGenPt > 0.) * (TMath::Sqrt((0.103*TMath::Exp(-0.0118*topGenPt) - 0.000134*topGenPt + 0.973) * (0.103*TMath::Exp(-0.0118*antitopGenPt) - 0.000134*antitopGenPt + 0.973))) + (topGenPt * antitopGenPt <= 0.)',
+    'samples': ['top']
+}
+
+aliases['gstarLow'] = {
+    'expr': 'Gen_ZGstar_mass > 0 && Gen_ZGstar_mass < 4',
+    'samples': ['WZ', 'VgS', 'Vg']
+}
+aliases['gstarHigh'] = {
+    'expr': 'Gen_ZGstar_mass < 0 || Gen_ZGstar_mass > 4',
+    'samples': ['WZ', 'VgS', 'Vg'],
 }
 
 
@@ -99,8 +145,6 @@ aliases['bReq'] = {
 # aliases['wwcr'] = {
 #     'expr': 'mth>60 && mtw2>30 && mll>100 && bVeto'
 # }
-
-
 
 # # Overall b tag SF
 # aliases['btagSF'] = {

@@ -12,7 +12,7 @@ groupPlot['Fake']  = {
     'nameHR' : 'nonprompt',
     'isSignal' : 0,
     'color': '#94a4a2',    # 921 kGray + 1                                                                                                                          
-    'samples'  : ['Fake']
+    'samples'  : ['Fake_e', 'Fake_m']
 }
 
 
@@ -99,14 +99,21 @@ plot['top']  = {
 
 
 
-plot['Fake']  = {
-    'nameHR'   : 'nonprompt',
+plot['Fake_e']  = {
+    'nameHR'   : 'nonprompt_e',
     'color'    : 921,
     'isSignal' : 0,
     'isData'   : 0,
     'scale'    : 1.0,
 }
 
+plot['Fake_m']  = {
+    'nameHR'   : 'nonprompt_m',
+    'color'    : 921,
+    'isSignal' : 0,
+    'isData'   : 0,
+    'scale'    : 1.0,
+}
 
 plot['WW']  = {
     'nameHR'   : 'WW',

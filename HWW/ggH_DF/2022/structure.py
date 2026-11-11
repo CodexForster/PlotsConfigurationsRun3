@@ -13,12 +13,12 @@ structure['DY']  = {
 
 structure['Fake_e']  = {  
                   'isSignal' : 0,
-                  'isData'   : 0,
+                  'isData'   : 0,                  
               }
 
 structure['Fake_m']  = {  
                   'isSignal' : 0,
-                  'isData'   : 0,
+                  'isData'   : 0,                  
               }
 
 
@@ -61,12 +61,42 @@ structure['VVV']  = {
 
 
 structure['ggH_hww'] = {
+                  'isSignal' : 1,
+                  'isData'   : 0,    
+                  }
+
+structure['ZH_hww'] = {
+                  'isSignal' : 0,
+                  'isData'   : 0,    
+                  }
+
+structure['ggZH_hww'] = {
+                  'isSignal' : 0,
+                  'isData'   : 0,    
+                  }
+
+structure['WH_hww'] = {
+                  'isSignal' : 0,
+                  'isData'   : 0,    
+                  }
+
+structure['ttH_hww'] = {
+                  'isSignal' : 0,
+                  'isData'   : 0,    
+                  }
+
+structure['ggH_htt'] = {
+                  'isSignal' : 0,
+                  'isData'   : 0,    
+                  }
+
+structure['qqH_htt'] = {
                   'isSignal' : 0,
                   'isData'   : 0,    
                   }
 
 structure['qqH_hww'] = {
-                  'isSignal' : 1,
+                  'isSignal' : 0,
                   'isData'   : 0,  
                   }
 
